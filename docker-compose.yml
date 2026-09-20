@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: caresync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-caresync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-caresync}
+      POSTGRES_DB: ${POSTGRES_DB:-caresync}
+    ports:
+      - "5432:5432"
+    volumes:
+      - caresync_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-caresync}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: caresync-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-caresync}:${POSTGRES_PASSWORD:-caresync}@db:5432/${POSTGRES_DB:-caresync}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    container_name: caresync-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  caresync_pgdata:
