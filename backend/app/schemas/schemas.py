@@ -21,7 +21,9 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    # Plain str on purpose: login only looks the account up. Format-validating
+    # here would lock out any account whose stored address fails strict checks.
+    email: str
     password: str
 
 
@@ -33,9 +35,14 @@ class Token(BaseModel):
     full_name: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class UserOut(BaseModel):
     id: str
-    email: EmailStr
+    email: str
     full_name: str
     role: UserRole
     phone: Optional[str] = None
@@ -77,7 +84,7 @@ class PatientOut(BaseModel):
     id: str
     user_id: str
     full_name: str
-    email: EmailStr
+    email: str
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
     blood_group: Optional[str] = None
@@ -115,7 +122,7 @@ class DoctorUpdate(BaseModel):
 class DoctorOut(BaseModel):
     id: str
     full_name: str
-    email: EmailStr
+    email: str
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     specialization: str
@@ -304,5 +311,11 @@ class AdminDashboardOut(BaseModel):
     completed_appointments: int
     cancelled_appointments: int
     no_show_appointments: int
+    total_appointments: int = 0
+    upcoming_appointments: int = 0
+    no_show_rate: float = 0.0
+    status_breakdown: list[dict] = []
     department_stats: list[dict]
     appointment_trend: list[dict]
+    doctor_utilization: list[dict] = []
+    recent_appointments: list[dict] = []

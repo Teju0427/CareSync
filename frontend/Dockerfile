@@ -1,20 +1,16 @@
+# ---- build ----
 FROM node:20-alpine AS build
 WORKDIR /app
-
-# Vite reads VITE_* variables at BUILD time and bakes them into the JS
-# bundle — a runtime `environment:` entry in docker-compose is too late.
-# This must come in as a build ARG.
-ARG VITE_API_URL=http://localhost:8000
-ENV VITE_API_URL=$VITE_API_URL
-
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine
-WORKDIR /app
-RUN npm install -g serve
-COPY --from=build /app/dist ./dist
-EXPOSE 3000
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# ---- serve ----
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY docker/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
+# Strip any Windows CRLF line endings, then make executable
+RUN sed -i 's/\r$//' /docker-entrypoint.d/40-runtime-config.sh && chmod +x /docker-entrypoint.d/40-runtime-config.sh
+EXPOSE 80

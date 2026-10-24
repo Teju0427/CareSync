@@ -1,156 +1,122 @@
-import { useEffect, useState } from "react";
-import api from "../../api/client";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Search, Briefcase, IndianRupee, Stethoscope, CalendarCheck, Sparkles } from "lucide-react";
+import api, { errorMessage } from "../../api/client";
+import { Avatar, Modal, PageHeader, EmptyState, SkeletonRows } from "../../components/ui.jsx";
+import SlotPicker from "../../components/SlotPicker.jsx";
+import { useToast } from "../../components/Toast.jsx";
+import { formatDate, formatTime } from "../../utils";
 
-export default function FindDoctors() {
-  const [departments, setDepartments] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [departmentId, setDepartmentId] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [slots, setSlots] = useState([]);
-  const [selectedTime, setSelectedTime] = useState(null);
+const REASONS = ["Routine check-up", "Follow-up visit", "New symptoms", "Specialist consultation"];
+
+function BookingModal({ doctor, onClose }) {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [slot, setSlot] = useState(null);
   const [reason, setReason] = useState("");
-  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    api.get("/admin/departments").then((res) => setDepartments(res.data));
-  }, []);
-
-  useEffect(() => {
-    const params = {};
-    if (departmentId) params.department_id = departmentId;
-    if (search) params.search = search;
-    api.get("/doctors", { params }).then((res) => setDoctors(res.data));
-  }, [departmentId, search]);
-
-  useEffect(() => {
-    if (!selectedDoctor) return;
-    setSelectedTime(null);
-    api
-      .get(`/doctors/${selectedDoctor.id}/available-slots`, { params: { for_date: date } })
-      .then((res) => setSlots(res.data));
-  }, [selectedDoctor, date]);
-
-  async function bookAppointment() {
-    setMessage("");
+  async function book() {
+    setBusy(true); setError("");
     try {
-      await api.post("/appointments", {
-        doctor_id: selectedDoctor.id,
-        appointment_date: date,
-        appointment_time: selectedTime,
-        reason,
-      });
-      setMessage("Appointment booked. You'll find it under Appointments.");
-      setSelectedTime(null);
-      setReason("");
-      const res = await api.get(`/doctors/${selectedDoctor.id}/available-slots`, { params: { for_date: date } });
-      setSlots(res.data);
+      await api.post("/appointments", { doctor_id: doctor.id, appointment_date: slot.date, appointment_time: slot.time, reason: reason || null });
+      toast.success(`Booked with ${doctor.full_name} on ${formatDate(slot.date, { day: "numeric", month: "short" })} at ${formatTime(slot.time)}.`);
+      onClose();
+      navigate("/patient/appointments");
     } catch (err) {
-      setMessage(err.response?.data?.detail || "Could not book that slot — please try another.");
-    }
+      setError(errorMessage(err));
+      setSlot(null);
+    } finally { setBusy(false); }
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Find a doctor</h1>
-          <p>Filter by department or search by name, then pick an open time.</p>
+    <Modal
+      large
+      title={`Book with ${doctor.full_name}`}
+      subtitle={`${doctor.specialization}${doctor.department_name ? " · " + doctor.department_name : ""} · ₹${doctor.consultation_fee} consultation`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={!slot || busy} onClick={book}>
+            <CalendarCheck size={16} />
+            {busy ? "Booking…" : slot ? `Confirm ${formatTime(slot.time)}, ${formatDate(slot.date, { day: "numeric", month: "short" })}` : "Select a time"}
+          </button>
+        </>
+      }
+    >
+      <h3 className="mb-2">1. Choose a date &amp; time</h3>
+      <SlotPicker doctorId={doctor.id} value={slot} onChange={setSlot} />
+      <h3 className="mt-3 mb-2">2. What's the visit about? <span className="faint small" style={{ fontWeight: 500 }}>(optional)</span></h3>
+      <div className="row wrap mb-2">
+        {REASONS.map((r) => <button key={r} type="button" className={`chip ${reason === r ? "active" : ""}`} onClick={() => setReason(reason === r ? "" : r)}>{r}</button>)}
+      </div>
+      <div className="field">
+        <textarea className="textarea" placeholder="Anything the doctor should know in advance…" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} />
+        <span className="hint"><Sparkles size={12} style={{ verticalAlign: -1 }} /> Used only to categorise the visit type for scheduling.</span>
+      </div>
+      {error && <p className="form-error">{error}</p>}
+    </Modal>
+  );
+}
+
+export default function FindDoctors() {
+  const [doctors, setDoctors] = useState(null);
+  const [departments, setDepartments] = useState([]);
+  const [dept, setDept] = useState("");
+  const [query, setQuery] = useState("");
+  const [booking, setBooking] = useState(null);
+
+  useEffect(() => {
+    api.get("/doctors").then((r) => setDoctors(r.data));
+    api.get("/admin/departments").then((r) => setDepartments(r.data));
+  }, []);
+
+  const filtered = useMemo(() => (doctors || []).filter((d) =>
+    (!dept || String(d.department_id) === dept) &&
+    (!query || `${d.full_name} ${d.specialization}`.toLowerCase().includes(query.toLowerCase()))
+  ), [doctors, dept, query]);
+
+  return (
+    <>
+      <PageHeader title="Find a doctor" subtitle="Browse our doctors, then pick a time that suits you." />
+      <div className="row wrap mb-2" style={{ gap: ".75rem" }}>
+        <div className="search grow" style={{ minWidth: 220 }}>
+          <Search size={16} />
+          <input className="input" placeholder="Search by name or specialization" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search doctors" />
         </div>
       </div>
-
-      <div className="filter-bar">
-        <div className="field field-department">
-          <label htmlFor="department">Department</label>
-          <select id="department" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-            <option value="">All departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field field-search">
-          <label htmlFor="doctor-search">Search by name</label>
-          <input
-            id="doctor-search"
-            placeholder="e.g. Dr. Sharma"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      <div className="row wrap mb-3" style={{ gap: ".5rem" }}>
+        <button className={`chip ${dept === "" ? "active" : ""}`} onClick={() => setDept("")}>All departments</button>
+        {departments.map((d) => <button key={d.id} className={`chip ${dept === String(d.id) ? "active" : ""}`} onClick={() => setDept(String(d.id))}>{d.name}</button>)}
       </div>
 
-      <div className="two-col">
-        <div>
-          {doctors.length === 0 ? (
-            <div className="empty-state">No doctors match those filters yet.</div>
-          ) : (
-            <div className="doctor-grid">
-              {doctors.map((doc) => (
-                <div key={doc.id} className="doctor-card">
-                  <h3>{doc.full_name}</h3>
-                  <div className="dept">{doc.specialization}{doc.department_name ? ` · ${doc.department_name}` : ""}</div>
-                  <p style={{ fontSize: "0.9rem" }}>{doc.bio || `${doc.years_experience} years of experience.`}</p>
-                  <div className="fee">Consultation fee: ₹{doc.consultation_fee}</div>
-                  <button className="btn btn-secondary" style={{ marginTop: "0.6rem" }} onClick={() => setSelectedDoctor(doc)}>
-                    View availability
-                  </button>
+      {!doctors ? <div className="card"><SkeletonRows rows={3} height={80} /></div> : filtered.length === 0 ? (
+        <div className="card"><EmptyState icon={Stethoscope} title="No doctors match" text="Try a different department or clear the search." /></div>
+      ) : (
+        <div className="doctor-grid">
+          {filtered.map((d) => (
+            <div className="card doctor-card" key={d.id}>
+              <div className="row" style={{ gap: ".9rem" }}>
+                <Avatar name={d.full_name} size="lg" />
+                <div className="grow">
+                  <h3>{d.full_name}</h3>
+                  <div className="muted small">{d.specialization}</div>
+                  {d.department_name && <span className="badge badge-neutral" style={{ marginTop: 6 }}>{d.department_name}</span>}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="panel">
-          {!selectedDoctor ? (
-            <p>Select a doctor to see open slots.</p>
-          ) : (
-            <>
-              <h3>{selectedDoctor.full_name}</h3>
-              <div className="field">
-                <label htmlFor="date">Date</label>
-                <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
-
-              {slots.length === 0 ? (
-                <p style={{ color: "var(--color-muted)" }}>No open slots on this date. Try another day.</p>
-              ) : (
-                <div className="slot-grid">
-                  {slots.map((s) => (
-                    <button
-                      key={s.time}
-                      className={`slot-btn ${selectedTime === s.time ? "selected" : ""}`}
-                      onClick={() => setSelectedTime(s.time)}
-                    >
-                      {s.time.slice(0, 5)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {selectedTime && (
-                <>
-                  <div className="field">
-                    <label htmlFor="reason">Reason for visit</label>
-                    <textarea
-                      id="reason"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      placeholder="e.g. routine checkup, follow-up on last visit…"
-                    />
-                  </div>
-                  <button className="btn btn-primary" onClick={bookAppointment}>
-                    Confirm {selectedTime.slice(0, 5)} on {date}
-                  </button>
-                </>
-              )}
-
-              {message && <p style={{ marginTop: "0.75rem" }}>{message}</p>}
-            </>
-          )}
+              {d.bio && <p className="muted small" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{d.bio}</p>}
+              <div className="meta-row">
+                <span><Briefcase size={14} /> {d.years_experience} yrs experience</span>
+                <span><IndianRupee size={14} /> {d.consultation_fee} fee</span>
+              </div>
+              <button className="btn btn-primary btn-block" onClick={() => setBooking(d)}><CalendarCheck size={16} /> Book appointment</button>
+            </div>
+          ))}
         </div>
-      </div>
-    </div>
+      )}
+      {booking && <BookingModal doctor={booking} onClose={() => setBooking(null)} />}
+    </>
   );
 }

@@ -71,3 +71,28 @@ def test_doctor_can_fetch_own_profile(client, admin_token):
     resp = client.get("/doctors/me", headers={"Authorization": f"Bearer {doctor_token}"})
     assert resp.status_code == 200
     assert resp.json()["email"] == "selfcheck@example.com"
+
+
+def test_change_password_flow(client, patient_token):
+    h = {"Authorization": f"Bearer {patient_token}"}
+    bad = client.post("/auth/change-password", json={"current_password": "wrong-pass", "new_password": "newpassword1"}, headers=h)
+    assert bad.status_code == 400
+    same = client.post("/auth/change-password", json={"current_password": "password123", "new_password": "password123"}, headers=h)
+    assert same.status_code == 400
+    ok = client.post("/auth/change-password", json={"current_password": "password123", "new_password": "newpassword1"}, headers=h)
+    assert ok.status_code == 204
+    assert client.post("/auth/login", json={"email": "patient@example.com", "password": "password123"}).status_code == 401
+    assert client.post("/auth/login", json={"email": "patient@example.com", "password": "newpassword1"}).status_code == 200
+
+
+def test_legacy_local_email_does_not_break_responses(client, db_session_direct):
+    """Regression: a stored .local email must not 500 an endpoint."""
+    from app.core.security import hash_password
+    from app.models.models import User, UserRole
+    db_session_direct.add(User(email="old.admin@caresync.local", hashed_password=hash_password("adminpass123"),
+                               full_name="Legacy Admin", role=UserRole.admin))
+    db_session_direct.commit()
+    token = client.post("/auth/login", json={"email": "old.admin@caresync.local", "password": "adminpass123"}).json()["access_token"]
+    resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "old.admin@caresync.local"

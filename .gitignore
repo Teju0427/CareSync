@@ -1,26 +1,19 @@
-# Python
 __pycache__/
 *.py[cod]
-*.egg-info/
 .venv/
 venv/
 *.db
-*.sqlite3
-
-# Node
 node_modules/
 dist/
 .vite/
-
-# Env
 .env
 .env.local
-
-# ML artifacts
+# local deployment state (contains generated secrets)
+deploy/azure/.state.json
 ml/*.png
-backend/app/ml/*.joblib
-
-# OS / editor
+.pytest_cache/
 .DS_Store
 .vscode/
 .idea/
+# NOTE: backend/app/ml/no_show_model.joblib is intentionally committed so every
+# build (local, CI, Azure) ships the trained model instead of the heuristic fallback.

@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     subgraph Client
-        A[React SPA<br/>Vite + React Router]
+        A[React SPA served by nginx<br/>API address from runtime config.js]
     end
 
     subgraph API["Backend — FastAPI"]
@@ -155,3 +155,20 @@ erDiagram
 - **The no-show risk score lives on the appointment row**, not in a
   separate predictions table, because it's a point-in-time estimate tied
   to one appointment, not a record that needs its own history.
+
+
+## Deployment topology (Azure)
+
+```mermaid
+flowchart LR
+    U[Browser] --> W[Container App: caresync-web<br/>nginx + React build]
+    U --> A[Container App: caresync-api<br/>FastAPI + in-process model]
+    W -. serves SPA .-> U
+    A --> P[(Azure Database for PostgreSQL<br/>Flexible Server, SSL)]
+    R[Azure Container Registry] -. images .-> W
+    R -. images .-> A
+```
+
+* Images are built in Azure (`az acr build`) from `backend/` and `frontend/`.
+* `API_URL` is injected into the web container at start; `ALLOWED_ORIGINS` on the API is set to the web app's URL.
+* Secrets (database URL, JWT key, seed passwords) are Container Apps secrets referenced by name, never baked into images.

@@ -35,3 +35,18 @@ def test_admin_dashboard_ok(client, admin_token):
     body = resp.json()
     assert "total_patients" in body
     assert "total_doctors" in body
+
+
+def test_dashboard_has_extended_fields(client, admin_token):
+    body = client.get("/admin/dashboard", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    for key in ("total_appointments", "upcoming_appointments", "no_show_rate",
+                "status_breakdown", "doctor_utilization", "recent_appointments"):
+        assert key in body
+    assert len(body["appointment_trend"]) == 14  # zero-filled window
+
+
+def test_only_admin_can_list_all_patients(client, patient_token, admin_token):
+    assert client.get("/patients", headers={"Authorization": f"Bearer {patient_token}"}).status_code == 403
+    resp = client.get("/patients", headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1

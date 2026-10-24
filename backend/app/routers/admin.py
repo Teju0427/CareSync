@@ -98,20 +98,28 @@ def delete_doctor(doctor_id: str, db: Session = Depends(get_db)):
 def dashboard(db: Session = Depends(get_db)):
     today = date.today()
 
+    def count(*filters):
+        return db.query(func.count(Appointment.id)).filter(*filters).scalar() or 0
+
     total_patients = db.query(func.count(Patient.id)).scalar() or 0
     total_doctors = db.query(func.count(Doctor.id)).scalar() or 0
-    todays_appointments = (
-        db.query(func.count(Appointment.id)).filter(Appointment.appointment_date == today).scalar() or 0
+    total_appointments = count()
+    todays_appointments = count(Appointment.appointment_date == today)
+    completed = count(Appointment.status == AppointmentStatus.completed)
+    cancelled = count(Appointment.status == AppointmentStatus.cancelled)
+    no_show = count(Appointment.status == AppointmentStatus.no_show)
+    upcoming = count(
+        Appointment.appointment_date >= today,
+        Appointment.status.in_([AppointmentStatus.scheduled, AppointmentStatus.confirmed]),
     )
-    completed = (
-        db.query(func.count(Appointment.id)).filter(Appointment.status == AppointmentStatus.completed).scalar() or 0
+    # No-show rate among visits that actually reached an outcome
+    resolved = completed + no_show
+    no_show_rate = round(no_show / resolved, 4) if resolved else 0.0
+
+    status_rows = (
+        db.query(Appointment.status, func.count(Appointment.id)).group_by(Appointment.status).all()
     )
-    cancelled = (
-        db.query(func.count(Appointment.id)).filter(Appointment.status == AppointmentStatus.cancelled).scalar() or 0
-    )
-    no_show = (
-        db.query(func.count(Appointment.id)).filter(Appointment.status == AppointmentStatus.no_show).scalar() or 0
-    )
+    status_breakdown = [{"status": s.value, "count": c} for s, c in status_rows]
 
     dept_stats = (
         db.query(Department.name, func.count(Appointment.id))
@@ -120,17 +128,49 @@ def dashboard(db: Session = Depends(get_db)):
         .group_by(Department.name)
         .all()
     )
-    department_stats = [{"department": name, "appointment_count": count} for name, count in dept_stats]
+    department_stats = [{"department": name, "appointment_count": c} for name, c in dept_stats]
 
-    since = today - timedelta(days=13)
-    trend_rows = (
+    # 14-day window centred on today, with zero-filled days so the chart has no gaps
+    start = today - timedelta(days=7)
+    end = today + timedelta(days=6)
+    rows = (
         db.query(Appointment.appointment_date, func.count(Appointment.id))
-        .filter(Appointment.appointment_date >= since)
+        .filter(Appointment.appointment_date >= start, Appointment.appointment_date <= end)
         .group_by(Appointment.appointment_date)
-        .order_by(Appointment.appointment_date)
         .all()
     )
-    appointment_trend = [{"date": str(d), "count": c} for d, c in trend_rows]
+    by_day = {d: c for d, c in rows}
+    appointment_trend = [
+        {"date": str(start + timedelta(days=i)), "count": by_day.get(start + timedelta(days=i), 0)}
+        for i in range(14)
+    ]
+
+    util_rows = (
+        db.query(Doctor, func.count(Appointment.id))
+        .join(Appointment, Appointment.doctor_id == Doctor.id)
+        .group_by(Doctor.id)
+        .order_by(func.count(Appointment.id).desc())
+        .limit(6)
+        .all()
+    )
+    doctor_utilization = [
+        {"doctor": d.user.full_name, "specialization": d.specialization, "appointments": c}
+        for d, c in util_rows
+    ]
+
+    recent = db.query(Appointment).order_by(Appointment.created_at.desc()).limit(8).all()
+    recent_appointments = [
+        {
+            "id": a.id,
+            "patient": a.patient.user.full_name,
+            "doctor": a.doctor.user.full_name,
+            "date": str(a.appointment_date),
+            "time": str(a.appointment_time)[:5],
+            "status": a.status.value,
+            "risk": a.no_show_risk_score,
+        }
+        for a in recent
+    ]
 
     return AdminDashboardOut(
         total_patients=total_patients,
@@ -139,6 +179,12 @@ def dashboard(db: Session = Depends(get_db)):
         completed_appointments=completed,
         cancelled_appointments=cancelled,
         no_show_appointments=no_show,
+        total_appointments=total_appointments,
+        upcoming_appointments=upcoming,
+        no_show_rate=no_show_rate,
+        status_breakdown=status_breakdown,
         department_stats=department_stats,
         appointment_trend=appointment_trend,
+        doctor_utilization=doctor_utilization,
+        recent_appointments=recent_appointments,
     )

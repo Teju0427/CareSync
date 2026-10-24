@@ -92,6 +92,6 @@ def update_patient_profile(
 @router.get("", response_model=list[PatientOut])
 def list_patients(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.admin, UserRole.doctor)),
+    current_user: User = Depends(require_roles(UserRole.admin)),
 ):
-    return [_to_patient_out(p) for p in db.query(Patient).all()]
+    return [_to_patient_out(p) for p in db.query(Patient).order_by(Patient.created_at.desc()).all()]

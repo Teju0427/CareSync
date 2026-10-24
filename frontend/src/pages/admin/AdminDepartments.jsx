@@ -1,72 +1,58 @@
 import { useEffect, useState } from "react";
-import api from "../../api/client";
+import { Building2, Plus, Trash2 } from "lucide-react";
+import api, { errorMessage } from "../../api/client";
+import { ConfirmDialog, EmptyState, PageHeader, SkeletonRows } from "../../components/ui.jsx";
+import { useToast } from "../../components/Toast.jsx";
 
 export default function AdminDepartments() {
-  const [departments, setDepartments] = useState([]);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const toast = useToast();
+  const [depts, setDepts] = useState(null);
+  const [doctors, setDoctors] = useState([]);
+  const [form, setForm] = useState({ name: "", description: "" });
   const [error, setError] = useState("");
-
-  function load() {
-    api.get("/admin/departments").then((res) => setDepartments(res.data));
-  }
+  const [remove, setRemove] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => { api.get("/admin/departments").then((r) => setDepts(r.data)); api.get("/doctors").then((r) => setDoctors(r.data)); };
   useEffect(load, []);
 
-  async function addDepartment(e) {
-    e.preventDefault();
-    setError("");
-    try {
-      await api.post("/admin/departments", { name, description });
-      setName("");
-      setDescription("");
-      load();
-    } catch (err) {
-      setError(err.response?.data?.detail || "Could not add department.");
-    }
+  async function add(e) {
+    e.preventDefault(); setError("");
+    try { await api.post("/admin/departments", { name: form.name.trim(), description: form.description.trim() || null }); toast.success("Department added."); setForm({ name: "", description: "" }); load(); }
+    catch (err) { setError(errorMessage(err)); }
   }
-
-  async function removeDepartment(id) {
-    await api.delete(`/admin/departments/${id}`);
-    load();
+  async function doRemove() {
+    setBusy(true);
+    try { await api.delete(`/admin/departments/${remove.id}`); toast.success("Department removed."); setRemove(null); load(); }
+    catch (e) { toast.error(errorMessage(e)); } finally { setBusy(false); }
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Departments</h1>
-          <p>Group doctors by specialty area.</p>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div className="panel">
-          {departments.length === 0 ? (
-            <div className="empty-state">No departments yet.</div>
-          ) : (
-            <table>
-              <thead><tr><th>Name</th><th>Description</th><th></th></tr></thead>
-              <tbody>
-                {departments.map((d) => (
-                  <tr key={d.id}>
-                    <td>{d.name}</td>
-                    <td>{d.description || "—"}</td>
-                    <td><button className="btn btn-danger" onClick={() => removeDepartment(d.id)}>Remove</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <>
+      <PageHeader title="Departments" subtitle="Group doctors by specialty area." />
+      <div className="grid-2">
+        <div className="card card-flush">
+          {!depts ? <SkeletonRows /> : depts.length === 0 ? <EmptyState icon={Building2} title="No departments yet" text="Create one using the form." /> : (
+            <div className="table-wrap"><table className="table">
+              <thead><tr><th>Department</th><th>Doctors</th><th></th></tr></thead>
+              <tbody>{depts.map((d) => (
+                <tr key={d.id}><td><strong>{d.name}</strong><div className="faint small">{d.description || "No description"}</div></td>
+                  <td>{doctors.filter((x) => x.department_id === d.id).length}</td>
+                  <td className="right"><button className="btn btn-ghost btn-icon btn-sm" onClick={() => setRemove(d)} aria-label={`Remove ${d.name}`}><Trash2 size={16} /></button></td></tr>
+              ))}</tbody>
+            </table></div>
           )}
         </div>
-
-        <form className="panel" onSubmit={addDepartment}>
-          <h3>Add department</h3>
-          <div className="field"><label>Name</label><input value={name} onChange={(e) => setName(e.target.value)} required /></div>
-          <div className="field"><label>Description</label><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></div>
-          {error && <p className="error-text">{error}</p>}
-          <button className="btn btn-primary" type="submit">Add department</button>
+        <form className="card" onSubmit={add}>
+          <div className="card-head"><h3>Add department</h3></div>
+          <div className="card-body">
+            <div className="field"><label>Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+            <div className="field"><label>Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            {error && <p className="form-error">{error}</p>}
+            <button className="btn btn-primary"><Plus size={16} /> Add department</button>
+          </div>
         </form>
       </div>
-    </div>
+      {remove && <ConfirmDialog danger busy={busy} title={`Remove ${remove.name}?`} confirmLabel="Remove" onClose={() => setRemove(null)} onConfirm={doRemove} message="Doctors in this department are kept, but become unassigned." />}
+    </>
   );
 }

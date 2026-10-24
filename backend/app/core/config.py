@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 8  # 8 hours
 
+    # Optional: create demo departments/doctors/admin on startup (idempotent).
+    # Credentials come from SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD / SEED_DOCTOR_PASSWORD.
+    SEED_DEMO_DATA: bool = False
+
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 

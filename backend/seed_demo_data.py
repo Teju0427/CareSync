@@ -17,14 +17,18 @@ alone).
 Run from the backend/ directory, with the same environment the API uses:
     python seed_demo_data.py
 """
+import os
 from datetime import time
 
 from app.core.security import hash_password
 from app.db.database import Base, SessionLocal, engine
 from app.models.models import Department, Doctor, DoctorAvailability, User, UserRole
 
-ADMIN_EMAIL = "admin@caresync.local"
-ADMIN_PASSWORD = "AdminPass123!"
+# Credentials are environment-driven so a public deployment never ships a
+# well-known admin password. The defaults below are for local development only.
+ADMIN_EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@caresync.app")
+ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "AdminPass123!")
+DOCTOR_PASSWORD = os.getenv("SEED_DOCTOR_PASSWORD", "DoctorPass123!")
 
 # Every department these doctors need. Existing departments (matched by
 # name) are left untouched; only missing ones are created.
@@ -46,7 +50,7 @@ DEPARTMENTS = {
 DOCTORS = [
     {
         "email": "dr.sharma@gmail.com",
-        "password": "DoctorPass123!",
+        "password": DOCTOR_PASSWORD,
         "full_name": "Dr. Anjali Sharma",
         "department": "General Medicine",
         "specialization": "General Physician",
@@ -57,7 +61,7 @@ DOCTORS = [
     },
     {
         "email": "dr.mehta@gmail.com",
-        "password": "DoctorPass123!",
+        "password": DOCTOR_PASSWORD,
         "full_name": "Dr. Rahul Mehta",
         "department": "Cardiology",
         "specialization": "Cardiologist",
@@ -68,7 +72,7 @@ DOCTORS = [
     },
     {
         "email": "dr.nair@gmail.com",
-        "password": "DoctorPass123!",
+        "password": DOCTOR_PASSWORD,
         "full_name": "Dr. Priya Nair",
         "department": "Dermatology",
         "specialization": "Dermatologist",
@@ -79,7 +83,7 @@ DOCTORS = [
     },
     {
         "email": "dr.rao@gmail.com",
-        "password": "DoctorPass123!",
+        "password": DOCTOR_PASSWORD,
         "full_name": "Dr. Arjun Rao",
         "department": "Orthopedics",
         "specialization": "Orthopedic Surgeon",
@@ -90,7 +94,7 @@ DOCTORS = [
     },
     {
         "email": "dr.kapoor@gmail.com",
-        "password": "DoctorPass123!",
+        "password": DOCTOR_PASSWORD,
         "full_name": "Dr. Sneha Kapoor",
         "department": "Pediatrics",
         "specialization": "Pediatrician",
@@ -118,7 +122,7 @@ def seed_admin(db):
         full_name="CareSync Admin",
         role=UserRole.admin,
     ))
-    print(f"Created admin: {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+    print(f"Created admin: {ADMIN_EMAIL}")
 
 
 def seed_departments(db):
@@ -188,7 +192,7 @@ def seed_doctors(db, departments):
                 slot_duration_minutes=AVAILABILITY_SLOT_MINUTES,
             ))
 
-        print(f"Created doctor: {spec['full_name']} ({spec['email']} / {spec['password']})")
+        print(f"Created doctor: {spec['full_name']} ({spec['email']})")
 
 
 def main():

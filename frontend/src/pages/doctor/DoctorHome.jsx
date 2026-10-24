@@ -1,142 +1,68 @@
 import { useEffect, useState } from "react";
+import { CalendarClock, Users, ShieldAlert, CheckCircle2, CalendarX2, ChevronRight } from "lucide-react";
 import api from "../../api/client";
-import StatusPill from "../../components/StatusPill.jsx";
-
-const STATUS_OPTIONS = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+import { useAuth } from "../../AuthContext.jsx";
+import { Avatar, EmptyState, PageHeader, RiskBadge, SkeletonRows, StatCard, StatusBadge } from "../../components/ui.jsx";
+import ConsultationModal from "../../components/ConsultationModal.jsx";
+import { CATEGORY_LABEL, formatDate, formatTime, greeting, relativeDay, riskLevel, todayISO } from "../../utils";
 
 export default function DoctorHome() {
-  const [appointments, setAppointments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [noteDraft, setNoteDraft] = useState({});
-  const [rxDraft, setRxDraft] = useState({});
-  const [openRx, setOpenRx] = useState(null);
+  const { user } = useAuth();
+  const [appts, setAppts] = useState(null);
+  const [open, setOpen] = useState(null);
+  const load = () => api.get("/appointments").then((r) => setAppts(r.data));
+  useEffect(() => { load(); }, []);
 
-  function load() {
-    setLoading(true);
-    api.get("/appointments").then((res) => setAppointments(res.data)).finally(() => setLoading(false));
-  }
-  useEffect(load, []);
+  const today = todayISO();
+  const key = (a) => a.appointment_date + a.appointment_time;
+  const list = appts || [];
+  const todays = list.filter((a) => a.appointment_date === today).sort((a, b) => key(a).localeCompare(key(b)));
+  const upcoming = list.filter((a) => a.appointment_date > today && ["scheduled", "confirmed"].includes(a.status)).sort((a, b) => key(a).localeCompare(key(b)));
+  const remaining = todays.filter((a) => ["scheduled", "confirmed"].includes(a.status)).length;
+  const done = todays.filter((a) => a.status === "completed").length;
+  const highRisk = todays.filter((a) => ["scheduled", "confirmed"].includes(a.status) && riskLevel(a.no_show_risk_score) === "high").length;
+  const patients = new Set(list.map((a) => a.patient_id)).size;
 
-  async function updateStatus(id, status) {
-    await api.put(`/appointments/${id}/status`, { status });
-    load();
-  }
-
-  async function saveNotes(id) {
-    await api.put(`/appointments/${id}/notes`, { consultation_notes: noteDraft[id] || "" });
-    load();
-  }
-
-  async function submitPrescription(appointmentId) {
-    const items = rxDraft[appointmentId] || [];
-    if (items.length === 0) return;
-    await api.post("/prescriptions", { appointment_id: appointmentId, items });
-    setOpenRx(null);
-    setRxDraft({ ...rxDraft, [appointmentId]: [] });
-  }
-
-  function addRxItem(appointmentId) {
-    const current = rxDraft[appointmentId] || [];
-    setRxDraft({
-      ...rxDraft,
-      [appointmentId]: [...current, { medicine_name: "", dosage: "", frequency: "", duration_days: 5, instructions: "" }],
-    });
-  }
-
-  function updateRxItem(appointmentId, idx, field, value) {
-    const current = [...(rxDraft[appointmentId] || [])];
-    current[idx] = { ...current[idx], [field]: value };
-    setRxDraft({ ...rxDraft, [appointmentId]: current });
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const todays = appointments.filter((a) => a.appointment_date === today);
-  const upcoming = appointments.filter((a) => a.appointment_date > today);
-
-  function AppointmentCard({ a }) {
-    return (
-      <div className="panel" style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-          <div>
-            <strong>{a.patient_name}</strong>
-            <div style={{ color: "var(--color-muted)", fontSize: "0.9rem" }}>
-              {a.appointment_date} at {a.appointment_time} · {a.category?.replace(/_/g, " ") || "general consultation"}
-            </div>
-            {a.reason && <p style={{ margin: "0.4em 0 0 0" }}>{a.reason}</p>}
-            {a.no_show_risk_score != null && (
-              <div style={{ fontSize: "0.85rem", color: "var(--color-accent)" }}>
-                No-show risk: {(a.no_show_risk_score * 100).toFixed(0)}%
-              </div>
-            )}
-          </div>
-          <StatusPill status={a.status} />
-        </div>
-
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
-          <select value={a.status} onChange={(e) => updateStatus(a.id, e.target.value)}>
-            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-          </select>
-          <button className="btn btn-secondary" onClick={() => setOpenRx(openRx === a.id ? null : a.id)}>
-            {openRx === a.id ? "Close prescription" : "Add prescription"}
-          </button>
-        </div>
-
-        <div className="field" style={{ marginTop: "0.75rem" }}>
-          <label>Consultation notes</label>
-          <textarea
-            defaultValue={a.consultation_notes || ""}
-            onChange={(e) => setNoteDraft({ ...noteDraft, [a.id]: e.target.value })}
-          />
-          <button className="btn btn-secondary" style={{ alignSelf: "flex-start" }} onClick={() => saveNotes(a.id)}>
-            Save notes
-          </button>
-        </div>
-
-        {openRx === a.id && (
-          <div style={{ borderTop: "1px solid var(--color-line)", marginTop: "0.75rem", paddingTop: "0.75rem" }}>
-            {(rxDraft[a.id] || []).map((item, idx) => (
-              <div key={idx} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.4rem", flexWrap: "wrap" }}>
-                <input placeholder="Medicine" value={item.medicine_name} onChange={(e) => updateRxItem(a.id, idx, "medicine_name", e.target.value)} />
-                <input placeholder="Dosage" value={item.dosage} onChange={(e) => updateRxItem(a.id, idx, "dosage", e.target.value)} />
-                <input placeholder="Frequency" value={item.frequency} onChange={(e) => updateRxItem(a.id, idx, "frequency", e.target.value)} />
-                <input type="number" placeholder="Days" value={item.duration_days} onChange={(e) => updateRxItem(a.id, idx, "duration_days", Number(e.target.value))} style={{ width: "70px" }} />
-              </div>
-            ))}
-            <button className="btn btn-secondary" onClick={() => addRxItem(a.id)}>+ Add medicine</button>
-            <button className="btn btn-primary" style={{ marginLeft: "0.5rem" }} onClick={() => submitPrescription(a.id)}>
-              Save prescription
-            </button>
-          </div>
-        )}
+  const Row = ({ a, showDate }) => (
+    <button className="appt-card" style={{ width: "100%", background: "none", border: "none", borderBottom: "1px solid var(--line)", textAlign: "left", cursor: "pointer" }} onClick={() => setOpen(a)}>
+      <div style={{ width: 70 }}>
+        <strong>{formatTime(a.appointment_time)}</strong>
+        {showDate && <div className="faint small">{formatDate(a.appointment_date, { day: "numeric", month: "short" })}</div>}
       </div>
-    );
-  }
+      <Avatar name={a.patient_name} size="sm" />
+      <div className="grow">
+        <strong>{a.patient_name}</strong>
+        <div className="muted small">{CATEGORY_LABEL[a.category] || "Consultation"}{a.reason ? ` · ${a.reason}` : ""}</div>
+      </div>
+      <div className="row wrap" style={{ justifyContent: "flex-end" }}>
+        {["scheduled", "confirmed"].includes(a.status) && <RiskBadge score={a.no_show_risk_score} />}
+        <StatusBadge status={a.status} />
+        <ChevronRight size={16} className="faint" />
+      </div>
+    </button>
+  );
 
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Today's schedule</h1>
-          <p>{today}</p>
-        </div>
+    <>
+      <PageHeader title={`${greeting()}, ${user.full_name.replace(/^Dr\.?\s+/i, "Dr. ").split(" ").slice(0, 2).join(" ")}`} subtitle={`${relativeDay(today)} · ${formatDate(today, { day: "numeric", month: "long", year: "numeric" })}`} />
+      <div className="stat-grid">
+        <StatCard icon={CalendarClock} tone="teal" label="Still to see today" value={remaining} loading={!appts} />
+        <StatCard icon={CheckCircle2} tone="green" label="Completed today" value={done} loading={!appts} />
+        <StatCard icon={ShieldAlert} tone="red" label="High no-show risk today" value={highRisk} loading={!appts} />
+        <StatCard icon={Users} tone="blue" label="Patients under your care" value={patients} loading={!appts} />
       </div>
 
-      {loading ? <p>Loading…</p> : (
-        <>
-          {todays.length === 0 ? (
-            <div className="empty-state">No appointments today.</div>
-          ) : (
-            todays.map((a) => <AppointmentCard key={a.id} a={a} />)
-          )}
+      <div className="card card-flush mb-3">
+        <div className="card-head"><h3>Today's schedule</h3><span className="muted small">{todays.length} appointment{todays.length === 1 ? "" : "s"}</span></div>
+        {!appts ? <SkeletonRows /> : todays.length === 0 ? <EmptyState icon={CalendarX2} title="A clear day" text="No appointments are booked for today." /> : todays.map((a) => <Row key={a.id} a={a} />)}
+      </div>
 
-          <h2 style={{ marginTop: "2rem" }}>Upcoming</h2>
-          {upcoming.length === 0 ? (
-            <div className="empty-state">Nothing further scheduled yet.</div>
-          ) : (
-            upcoming.slice(0, 10).map((a) => <AppointmentCard key={a.id} a={a} />)
-          )}
-        </>
-      )}
-    </div>
+      <div className="card card-flush">
+        <div className="card-head"><h3>Coming up</h3></div>
+        {!appts ? <SkeletonRows rows={2} /> : upcoming.length === 0 ? <EmptyState title="Nothing further booked" text="New bookings will appear here." /> : upcoming.slice(0, 8).map((a) => <Row key={a.id} a={a} showDate />)}
+      </div>
+
+      {open && <ConsultationModal appt={open} onClose={() => setOpen(null)} onChanged={load} />}
+    </>
   );
 }

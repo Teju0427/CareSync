@@ -5,6 +5,8 @@ Mounts all routers, configures CORS, and creates tables on startup for
 local/demo convenience (production deployments should use Alembic
 migrations instead — see database/schema.sql and the docs/ folder).
 """
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,7 +35,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
+    if settings.ENV == "production" and settings.JWT_SECRET_KEY == "change-me-in-production":
+        raise RuntimeError("Refusing to start in production with the default JWT_SECRET_KEY. Set a long random value.")
     Base.metadata.create_all(bind=engine)
+    if settings.SEED_DEMO_DATA:
+        try:
+            from seed_demo_data import main as seed_main
+            seed_main()
+        except Exception as exc:  # seeding is a convenience; never block the API from starting
+            logging.getLogger("caresync").exception("Demo seeding failed: %s", exc)
 
 
 @app.get("/health", tags=["health"])
