@@ -1,5 +1,7 @@
 # CareSync
+
 [![CI](https://github.com/Teju0427/CareSync/actions/workflows/ci.yml/badge.svg)](https://github.com/Teju0427/CareSync/actions/workflows/ci.yml)
+
 **Clinic appointments, patient records and operations in one place** — a full-stack portfolio project with role-based access (patient / doctor / admin), real-time slot booking, and administrative AI that estimates appointment no-show risk.
 
 > ⚠️ **Not for clinical use.** CareSync does not diagnose, recommend treatment or make clinical decisions. The AI features are scheduling aids only. All data is synthetic.
